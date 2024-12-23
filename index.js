@@ -1,40 +1,275 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 require('dotenv').config()
-const app= express()
-const port= process.env.PORT|| 4000;
+const app = express()
+const port = process.env.PORT || 4000;
+
 
 //middleware
-app.use(cors())
+const corsOptions = {
+  origin: ['http://localhost:5173'],
+  credentials: true,
+  optionSuccessStatus: 200,
+}
+app.use(cors(corsOptions))
 app.use(express.json())
 
+//verify jwt token
+const verifyToken = (req, res, next) => {
+  const authorization = req.header.autherization;
+  if (!authorization) {
+    return res.send({ message: "No Token" })
+  }
+  const token = authorization.split(' ')[1];
+  jwt.verify(token, process.env.ACCESS_KEY_TOKEN, (err, decoded) => {
+    if (err) {
+      return res.send({ message: "Invalid token" })
+    }
+    req.decoded = decoded;
+    next()
+  })
+};
+
+//verify seller
+const verifySeller = async (req, res, next) => {
+  const email = req.decoded?.email
+  const query = { email: email }
+  const user = await userCollection.findOne(query)
+  const isSeller = user?.role === 'seller'
+  if (!isSeller) {
+    return res.status(403).send({ message: 'forbidden access' })
+  }
+  next()
+}
+
 //mongodb
-const uri= `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.nh9hntn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.nh9hntn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`
 
 const client = new MongoClient(uri, {
-    serverApi: {
-      version: ServerApiVersion.v1,
-      strict: true,
-      deprecationErrors: true,
-    }
-  })
-  const dbConnect= async ()=>{
-    try{
-        client.connect();
-        console.log("Database connected successfully");
-
-    } catch(error){
-console.log(error.name, error.message);
-    }
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
   }
+})
+const dbConnect = async () => {
+  try {
+    client.connect();
+    console.log("Database connected successfully");
+
+  } catch (error) {
+    console.log(error.name, error.message);
+  }
+}
 dbConnect()
+app.use(cookieParser())
+
+//db Collection
+const userCollection = client.db('MobileShopDB').collection('users')
+const productCollection = client.db('MobileShopDB').collection('products')
 
 //api
-app.get("/",(req,res)=>{
-    res.send("server is running")
+
+app.get("/", (req, res) => {
+  res.send("server is running")
 })
 
-app.listen(port, ()=>{
-    console.log(`server is running on port, ${port}`);
+//jwt
+app.post("/authentication", (req, res) => {
+  const userEmail = req.body
+  const token = jwt.sign(userEmail, process.env.ACCESS_KEY_TOKEN, { expiresIn: '10d' })
+  res.send({ token })
+
+})
+
+const verifyAdmin = async (req, res, next) => {
+  const email = req?.decoded?.email
+  const query = { email: email }
+  const user = await userCollection.findOne(query)
+  const isAdmin = user?.role === 'admin'
+  if (!isAdmin) {
+    return res.status(403).send({ message: 'forbidden access' })
+  }
+  next()
+}
+const verifyBuyer = async (req, res, next) => {
+  const email = req.decoded?.email
+  const query = { email: email }
+  const user = await userCollection.findOne(query)
+  const isbuyer = user?.role === 'buyer'
+  if (!isbuyer) {
+    return res.status(403).send({ message: 'forbidden access' })
+  }
+  next()
+}
+
+
+//find admin
+app.get('/user/admin/:email', verifyToken, async (req, res) => {
+  console.log("clicked");
+  const email = req.params.email;
+  console.log("decoded data", req.decoded);
+  if (email !== req.decoded.email) {
+    return res.status(403).send({ message: "forbidden access" })
+  }
+  const query = { email: email }
+  const user = await userCollection.findOne(query);
+  let admin = false
+  if (user) {
+    admin = user?.role === 'admin'
+  }
+  res.send({ admin })
+})
+
+//find Buyer
+app.get('/user/buyer/:email', verifyToken, async (req, res) => {
+  console.log("clicked");
+  const email = req.params.email;
+  console.log("decoded data", req.decoded);
+  if (email !== req.decoded.email) {
+    return res.status(403).send({ message: "forbidden access" })
+  }
+  const query = { email: email }
+  const user = await userCollection.findOne(query);
+  let buyer = false;
+  if (user) {
+    buyer = user?.role === 'buyer'
+  }
+  res.send({ buyer })
+})
+
+//find Seller
+app.get('/user/seller/:email', verifyToken, async (req, res) => {
+  console.log("clicked");
+  const email = req.params.email;
+  console.log("decoded data", req.decoded);
+  if (email !== req.decoded.email) {
+    return res.status(403).send({ message: "forbidden access" })
+  }
+  const query = { email: email }
+  const user = await userCollection.findOne(query);
+  let seller = false;
+  if (user) {
+    seller = user?.role === 'seller'
+  }
+  res.send({ seller })
+})
+
+app.post('/users/:email', async (req, res) => {
+  const email = req.params.email
+  const user = req.body
+  const query = { email: email }
+  const options = { upsert: true }
+  const isExist = await userCollection.findOne(query)
+  if (isExist) return res.send(isExist)
+  const result = await userCollection.insertOne(user)
+  res.send(result)
+})
+
+//get user
+app.get("/user/:email", async (req, res) => {
+  const query = { email: req.params.email }
+  const user = await userCollection.findOne(query)
+  console.log(user);
+  res.send(user)
+})
+
+//add product
+app.post("/addProduct", async (req, res) => {
+  const product = req.body;
+  const result = await productCollection.insertOne(product);
+  res.send(result);
+})
+//get seller products
+app.get("/getSellerProducts/:email", async (req, res) => {
+  const email = req.params.email;
+  const query = { sellerEmail: email }
+  const products = await productCollection.find(query).toArray()
+  res.send(products)
+})
+
+//get all user
+app.get("/getAllUser", async (req, res) => {
+  const users = await userCollection.find().toArray()
+  res.send(users)
+})
+
+//get all products
+app.get("/allProducts", async (req, res) => {
+  //name searching
+  //sort by price
+  //filter by price
+  //filter by brand
+
+  const { name, sort, category, brand } = req.query
+  const query = {}
+  if (name) {
+    query.name = { $regex: name, $options: 'i' }
+  }
+  if (category) {
+    query.category = { $regex: category, $options: 'i' }
+  }
+  if (brand) {
+    query.brand = brand;
+  }
+  const totalProducts = await productCollection.countDocuments(query)
+  const sortOption = sort === 'asc' ? 1 : -1
+  const products = await productCollection.find(query).sort({ price: sortOption }).toArray()
+  const productInfo = await productCollection.find({}, { projection: { category: 1, brand: 1 } }).toArray();
+
+  const brands = [...new Set(productInfo.map((product) => product.brand))]
+  const categories = [...new Set(productInfo.map((product) => product.category))]
+
+  res.json({ products, brands, categories, totalProducts })
+
+})
+//delete users
+app.delete('/userRemove/:email', async (req, res) => {
+  try {
+      const userEmail = req.params.email;
+      const filter = { email: userEmail };
+
+      const result = await userCollection.deleteOne(filter);
+      
+      if (result.deletedCount === 0) {
+          return res.status(404).send({ success: false, message: "User not found" });
+      }
+
+      res.send({ success: true, message: "User removed successfully" });
+  } catch (error) {
+      console.error("Error removing user:", error);
+      res.status(500).send({ success: false, message: "Server error" });
+  }
+});
+
+app.patch("/userUpdateToSeller/:email", async (req,res)=>{
+  const email= req.params.email
+  const filter= {email: email}
+  const updatedDoc = {
+    $set: {
+      role: "seller"
+    }
+  };
+  const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+})
+app.patch("/userUpdateToBuyer/:email", async (req,res)=>{
+  const email= req.params.email
+  const filter= {email: email}
+  const updatedDoc = {
+    $set: {
+      role: "buyer"
+    }
+  };
+  const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+})
+
+
+
+app.listen(port, () => {
+  console.log(`server is running on port, ${port}`);
 })
