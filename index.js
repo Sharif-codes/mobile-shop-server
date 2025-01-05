@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
 const app = express()
 const port = process.env.PORT || 4000;
@@ -10,7 +10,7 @@ const port = process.env.PORT || 4000;
 
 //middleware
 const corsOptions = {
-  origin: ['http://localhost:5173'],
+  origin: ['http://localhost:5173', 'https://mobile-shop-stride.vercel.app'],
   credentials: true,
   optionSuccessStatus: 200,
 }
@@ -70,6 +70,8 @@ app.use(cookieParser())
 //db Collection
 const userCollection = client.db('MobileShopDB').collection('users')
 const productCollection = client.db('MobileShopDB').collection('products')
+const wishListCollection = client.db('MobileShopDB').collection('wishlist')
+const cartCollection = client.db('MobileShopDB').collection('cart')
 
 //api
 
@@ -173,7 +175,6 @@ app.post('/users/:email', async (req, res) => {
 app.get("/user/:email", async (req, res) => {
   const query = { email: req.params.email }
   const user = await userCollection.findOne(query)
-  console.log(user);
   res.send(user)
 })
 
@@ -229,46 +230,114 @@ app.get("/allProducts", async (req, res) => {
 //delete users
 app.delete('/userRemove/:email', async (req, res) => {
   try {
-      const userEmail = req.params.email;
-      const filter = { email: userEmail };
+    const userEmail = req.params.email;
+    const filter = { email: userEmail };
 
-      const result = await userCollection.deleteOne(filter);
-      
-      if (result.deletedCount === 0) {
-          return res.status(404).send({ success: false, message: "User not found" });
-      }
+    const result = await userCollection.deleteOne(filter);
 
-      res.send({ success: true, message: "User removed successfully" });
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ success: false, message: "User not found" });
+    }
+
+    res.send({ success: true, message: "User removed successfully" });
   } catch (error) {
-      console.error("Error removing user:", error);
-      res.status(500).send({ success: false, message: "Server error" });
+    console.error("Error removing user:", error);
+    res.status(500).send({ success: false, message: "Server error" });
   }
 });
 
-app.patch("/userUpdateToSeller/:email", async (req,res)=>{
-  const email= req.params.email
-  const filter= {email: email}
+app.patch("/userUpdateToSeller/:email", async (req, res) => {
+  const email = req.params.email
+  const filter = { email: email }
   const updatedDoc = {
     $set: {
       role: "seller"
     }
   };
   const result = await userCollection.updateOne(filter, updatedDoc);
-      res.send(result);
+  res.send(result);
 })
-app.patch("/userUpdateToBuyer/:email", async (req,res)=>{
-  const email= req.params.email
-  const filter= {email: email}
+app.patch("/userUpdateToBuyer/:email", async (req, res) => {
+  const email = req.params.email
+  const filter = { email: email }
   const updatedDoc = {
     $set: {
       role: "buyer"
     }
   };
   const result = await userCollection.updateOne(filter, updatedDoc);
-      res.send(result);
+  res.send(result);
 })
 
+app.get("/getFeaturedProducts", async (req, res) => {
+  try {
+    const products = await productCollection
+      .find({ price: { $gt: 10000 } }) // Filter: Price greater than 10,000
+      .limit(3) // Limit the result to 3 items
+      .toArray(); // Convert the result to an array
+    res.send(products);
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    res.status(500).send({ error: "Failed to fetch products" });
+  }
+});
 
+app.post("/addToWishlist", async (req, res) => {
+  const product = req.body
+  delete product._id
+  const result = await wishListCollection.insertOne(product)
+  res.send(result)
+})
+app.post("/addToCart", async (req, res) => {
+  const product = req.body;
+  delete product._id
+  const result = await cartCollection.insertOne(product)
+  res.send(result)
+})
+
+app.get("/getWishList/:email", async (req, res) => {
+  const email = req.params.email
+  const query = { email: email }
+  const product = await wishListCollection.find(query).toArray()
+  res.send(product)
+})
+
+app.get("/getCartItem/:email", async (req, res) => {
+  const email = req.params.email
+  const query = { email: email }
+  const product = await cartCollection.find(query).toArray()
+  res.send(product)
+})
+
+//product delete from wishlist
+// app.delete("/wishlistRemove/:_id", async (req, res) => {
+
+//     const id = req.params._id
+//     console.log("id",id);
+//     const filter = {_id:id };
+//     const result = await wishListCollection.deleteOne(filter);
+//     console.log(result);
+//     res.send(result)
+//   }
+// )
+
+app.delete("/wishlistRemove/:_id", async (req, res) => {
+ 
+    const id = req.params._id;
+    const filter = { _id: new ObjectId(id) };
+    const result = await wishListCollection.deleteOne(filter);
+    res.send(result)
+});
+
+app.delete("/cartRemove/:_id", async (req, res) => {
+ 
+    const id = req.params._id;
+
+    const filter = { _id: new ObjectId(id) };
+
+    const result = await cartCollection.deleteOne(filter);
+    res.send(result)
+});
 
 app.listen(port, () => {
   console.log(`server is running on port, ${port}`);
