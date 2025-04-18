@@ -209,7 +209,7 @@ app.get("/allProducts", async (req, res) => {
   //filter by price
   //filter by brand
 
-  const { name, sort, category,seller, brand } = req.query;
+  const { name, sort, category,seller, brand, page=1, limit=6 } = req.query;
   const query = {}
   if (name) {
     query.name = { $regex: name, $options: 'i' }
@@ -225,9 +225,12 @@ app.get("/allProducts", async (req, res) => {
     query.brand = brand;
   }
  
+  const pageNumber= Number(page);
+  const limitNumber= Number(limit);
+
   const totalProducts = await productCollection.countDocuments(query)
   const sortOption = sort === 'asc' ? 1 : -1
-  const products = await productCollection.find(query).sort({ price: sortOption }).toArray()
+  const products = await productCollection.find(query).skip((pageNumber-1)* limitNumber).limit(limitNumber).sort({ price: sortOption }).toArray()
   const productInfo = await productCollection.find({}, { projection: { category: 1, brand: 1, seller: 1 } }).toArray();
 
   const brands = [...new Set(productInfo.map((product) => product.brand))]
