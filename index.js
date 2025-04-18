@@ -1,13 +1,17 @@
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const admin = require('firebase-admin');
+const serviceAccount = require('./gadgetshop-88be7-firebase-adminsdk-2dw7i-0593a198f5.json')
 const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
 const app = express()
 const port = process.env.PORT || 4000;
 
-
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 //middleware
 const corsOptions = {
   origin: ['http://localhost:5173', 'https://mobile-shop-stride.vercel.app'],
@@ -19,7 +23,7 @@ app.use(express.json())
 
 //verify jwt token
 const verifyToken = (req, res, next) => {
-  const authorization = req.header.autherization;
+  const authorization = req.headers.authorization;
   if (!authorization) {
     return res.send({ message: "No Token" })
   }
@@ -35,7 +39,7 @@ const verifyToken = (req, res, next) => {
 
 //verify seller
 const verifySeller = async (req, res, next) => {
-  const email = req.decoded?.email
+  const email = req.decoded.email
   const query = { email: email }
   const user = await userCollection.findOne(query)
   const isSeller = user?.role === 'seller'
@@ -88,7 +92,7 @@ app.post("/authentication", (req, res) => {
 })
 
 const verifyAdmin = async (req, res, next) => {
-  const email = req?.decoded?.email
+  const email = req.decoded.email
   const query = { email: email }
   const user = await userCollection.findOne(query)
   const isAdmin = user?.role === 'admin'
@@ -179,7 +183,7 @@ app.get("/user/:email", async (req, res) => {
 })
 
 //add product
-app.post("/addProduct", async (req, res) => {
+app.post("/addProduct",verifyToken,verifySeller, async (req, res) => {
   const product = req.body;
   const result = await productCollection.insertOne(product);
   res.send(result);
@@ -205,7 +209,7 @@ app.get("/allProducts", async (req, res) => {
   //filter by price
   //filter by brand
 
-  const { name, sort, category, brand } = req.query
+  const { name, sort, category,seller, brand } = req.query;
   const query = {}
   if (name) {
     query.name = { $regex: name, $options: 'i' }
@@ -213,40 +217,54 @@ app.get("/allProducts", async (req, res) => {
   if (category) {
     query.category = { $regex: category, $options: 'i' }
   }
+  if(seller)
+    {
+      query.seller = seller;
+    }
   if (brand) {
     query.brand = brand;
   }
+ 
   const totalProducts = await productCollection.countDocuments(query)
   const sortOption = sort === 'asc' ? 1 : -1
   const products = await productCollection.find(query).sort({ price: sortOption }).toArray()
-  const productInfo = await productCollection.find({}, { projection: { category: 1, brand: 1 } }).toArray();
+  const productInfo = await productCollection.find({}, { projection: { category: 1, brand: 1, seller: 1 } }).toArray();
 
   const brands = [...new Set(productInfo.map((product) => product.brand))]
   const categories = [...new Set(productInfo.map((product) => product.category))]
+  const sellers = [...new Set(productInfo.map((product) => product.seller))]
 
-  res.json({ products, brands, categories, totalProducts })
+  res.json({ products, brands, categories, totalProducts,sellers })
 
 })
+
 //delete users
 app.delete('/userRemove/:email', async (req, res) => {
+  const email = req.params.email;
+  const filter = { email: email };
   try {
-    const userEmail = req.params.email;
-    const filter = { email: userEmail };
+    // Get user by email
+    const userRecord = await admin.auth().getUserByEmail(email);
+    const uid = userRecord.uid;
 
-    const result = await userCollection.deleteOne(filter);
+    // Delete user by UID
+    await admin.auth().deleteUser(uid);
 
+    //Delete user from Database
+    const result = await userCollection.deleteOne(filter)
     if (result.deletedCount === 0) {
       return res.status(404).send({ success: false, message: "User not found" });
     }
 
-    res.send({ success: true, message: "User removed successfully" });
+    res.status(200).send({ success: true, message: `User with email ${email} deleted successfully.` });
   } catch (error) {
-    console.error("Error removing user:", error);
-    res.status(500).send({ success: false, message: "Server error" });
+    console.error("Error deleting user:", error);
+    res.status(500).send({ success: false, message: error.message });
   }
 });
 
-app.patch("/userUpdateToSeller/:email", async (req, res) => {
+app.patch("/userUpdateToSeller/:email",verifyToken,verifyAdmin, async (req, res) => {
+  console.log("seller clicked");
   const email = req.params.email
   const filter = { email: email }
   const updatedDoc = {
@@ -257,7 +275,7 @@ app.patch("/userUpdateToSeller/:email", async (req, res) => {
   const result = await userCollection.updateOne(filter, updatedDoc);
   res.send(result);
 })
-app.patch("/userUpdateToBuyer/:email", async (req, res) => {
+app.patch("/userUpdateToBuyer/:email",verifyToken,verifyAdmin, async (req, res) => {
   const email = req.params.email
   const filter = { email: email }
   const updatedDoc = {
@@ -267,13 +285,13 @@ app.patch("/userUpdateToBuyer/:email", async (req, res) => {
   };
   const result = await userCollection.updateOne(filter, updatedDoc);
   res.send(result);
-})
+});
 
 app.get("/getFeaturedProducts", async (req, res) => {
   try {
     const products = await productCollection
       .find({ price: { $gt: 10000 } }) // Filter: Price greater than 10,000
-      .limit(3) // Limit the result to 3 items
+      .limit(4) // Limit the result to 3 items
       .toArray(); // Convert the result to an array
     res.send(products);
   } catch (error) {
@@ -309,34 +327,22 @@ app.get("/getCartItem/:email", async (req, res) => {
   res.send(product)
 })
 
-//product delete from wishlist
-// app.delete("/wishlistRemove/:_id", async (req, res) => {
-
-//     const id = req.params._id
-//     console.log("id",id);
-//     const filter = {_id:id };
-//     const result = await wishListCollection.deleteOne(filter);
-//     console.log(result);
-//     res.send(result)
-//   }
-// )
-
 app.delete("/wishlistRemove/:_id", async (req, res) => {
- 
-    const id = req.params._id;
-    const filter = { _id: new ObjectId(id) };
-    const result = await wishListCollection.deleteOne(filter);
-    res.send(result)
+
+  const id = req.params._id;
+  const filter = { _id: new ObjectId(id) };
+  const result = await wishListCollection.deleteOne(filter);
+  res.send(result)
 });
 
 app.delete("/cartRemove/:_id", async (req, res) => {
- 
-    const id = req.params._id;
 
-    const filter = { _id: new ObjectId(id) };
+  const id = req.params._id;
 
-    const result = await cartCollection.deleteOne(filter);
-    res.send(result)
+  const filter = { _id: new ObjectId(id) };
+
+  const result = await cartCollection.deleteOne(filter);
+  res.send(result)
 });
 
 app.listen(port, () => {
