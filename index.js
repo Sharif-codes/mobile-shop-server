@@ -73,6 +73,7 @@ app.use(cookieParser())
 
 //db Collection
 const userCollection = client.db('MobileShopDB').collection('users')
+const categoryCollection = client.db('MobileShopDB').collection('categories')
 const productCollection = client.db('MobileShopDB').collection('products')
 const wishListCollection = client.db('MobileShopDB').collection('wishlist')
 const cartCollection = client.db('MobileShopDB').collection('cart')
@@ -174,7 +175,28 @@ app.post('/users/:email', async (req, res) => {
   const result = await userCollection.insertOne(user)
   res.send(result)
 })
+//add category
+app.post('/addCategory',verifyToken,verifySeller, async (req, res) => {
+  const receivedData= req.body;
+  const categoryName= receivedData.categoryName
+  const query= {categoryName: categoryName}
+  const isExist = await categoryCollection.findOne(query)
+  if (isExist) return res.send("already added")
+    const result= await categoryCollection.insertOne(receivedData)
+  res.send(result);
+})
+//get all categories
+app.get('/getAllCategories', async (req, res) => {
+  try {
+    const newCateories= await categoryCollection.find().toArray();
+    console.log(newCateories);
 
+    // res.json(uniqueCategories);
+    res.send(newCateories)
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 //get user
 app.get("/user/:email", async (req, res) => {
   const query = { email: req.params.email }
