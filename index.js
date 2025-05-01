@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
-const serviceAccount = require('./gadgetshop-88be7-firebase-adminsdk-2dw7i-0593a198f5.json')
+const serviceAccount = require('./gadgetshop-88be7-firebase-adminsdk-2dw7i-62ead0ab8b.json')
 const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
@@ -189,9 +189,6 @@ app.post('/addCategory',verifyToken,verifySeller, async (req, res) => {
 app.get('/getAllCategories', async (req, res) => {
   try {
     const newCateories= await categoryCollection.find().toArray();
-    console.log(newCateories);
-
-    // res.json(uniqueCategories);
     res.send(newCateories)
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -232,6 +229,7 @@ app.get("/allProducts", async (req, res) => {
   //filter by brand
 
   const { name, sort, category,seller, brand, page=1, limit=6 } = req.query;
+  
   const query = {}
   if (name) {
     query.name = { $regex: name, $options: 'i' }
