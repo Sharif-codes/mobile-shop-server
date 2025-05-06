@@ -208,11 +208,36 @@ app.post("/addProduct",verifyToken,verifySeller, async (req, res) => {
   res.send(result);
 })
 //get seller products
-app.get("/getSellerProducts/:email", async (req, res) => {
-  const email = req.params.email;
-  const query = { sellerEmail: email }
-  const products = await productCollection.find(query).toArray()
-  res.send(products)
+app.get("/getSellerProducts", async (req, res) => {
+  const { name, sort, category,seller, brand, page=1, limit=8 } = req.query;
+  const query = {}
+  if (name) {
+    query.name = { $regex: name, $options: 'i' }
+  }
+  if (category) {
+    query.category = { $regex: category, $options: 'i' }
+  }
+  if(seller)
+    {
+      query.sellerEmail = seller;
+    }
+  if (brand) {
+    query.brand = brand;
+  }
+ 
+  const pageNumber= Number(page);
+  const limitNumber= Number(limit);
+
+  const totalProducts = await productCollection.countDocuments(query)
+  const sortOption = sort === 'asc' ? 1 : -1
+  const products = await productCollection.find(query).skip((pageNumber-1)* limitNumber).limit(limitNumber).sort({ price: sortOption }).toArray()
+  const productInfo = await productCollection.find({}, { projection: { category: 1, brand: 1, seller: 1 } }).toArray();
+
+  const brands = [...new Set(productInfo.map((product) => product.brand))]
+  const categories = [...new Set(productInfo.map((product) => product.category))]
+  const sellers = [...new Set(productInfo.map((product) => product.seller))]
+
+  res.json({ products, brands, categories, totalProducts,sellers })
 })
 
 //get all user
@@ -228,7 +253,7 @@ app.get("/allProducts", async (req, res) => {
   //filter by price
   //filter by brand
 
-  const { name, sort, category,seller, brand, page=1, limit=6 } = req.query;
+  const { name, sort, category,seller, brand, page=1, limit=8 } = req.query;
   
   const query = {}
   if (name) {
